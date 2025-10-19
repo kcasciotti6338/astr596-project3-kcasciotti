@@ -166,27 +166,3 @@ class Star:
         
         return f'{self.spectral_type()}_{u}'
 
-def main():
-    """
-    Testing
-    """
-
-    filename = '/Users/kcasc/astr596/projects/astr-596-project-03-kcasciotti6338/data/EEM_dwarf_UBVIJHK_colors_Teff.txt'
-    data = np.genfromtxt(filename, skip_header=23, max_rows=118, usecols=(0, 1), dtype=[('sp_t', 'U10'), ('T_eff', 'f8')])   
-    idx = np.argmin(np.abs(data['T_eff'] - TSUN))
-    print('Sun\'s spectral type: ', data['sp_t'][idx])
-    
-    star = Star(1)
-    labels = star.f_strings()
-    print(labels['mass'])
-    print(labels['T_eff'])
-    print(labels['L_bol'])
-    print(labels['R'])
-    print(labels['id'])
-    print(labels['kappa_band'])
-    print(labels['L_band'])
-
-    pass
-
-if __name__ == "__main__":
-    main()

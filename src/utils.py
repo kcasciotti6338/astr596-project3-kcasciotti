@@ -4,8 +4,9 @@
 
 '''
 import numpy as np
+from numba import njit
 from scipy.integrate import simpson
-from src.constants import K_BOLTZMANN as K, H_PLANCK as H, C, BANDS, TSUN
+from src.constants import K_BOLTZMANN as K, H_PLANCK as H, C
 
 def integrate_band(func, band_min, band_max, *args):
     """
@@ -90,14 +91,13 @@ def cartesian_to_sphere(x, y, z):
     
     return theta, phi
 
-def main():
+@njit(cache=True, fastmath=True)
+def random():
     """
-    Testing
-    """
-    print('planck:', planck_function(BANDS['B'][0], TSUN))
+    Separated np.random.random for jit efficiency
     
-    b = integrate_band(planck_function, BANDS['B'][0], BANDS['B'][1], TSUN)
-    print('integrated B band: ', b)
-
-if __name__ == "__main__":
-    main()
+    Returns:
+    --------
+    np.random.random() : int
+    """
+    return np.random.random()

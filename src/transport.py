@@ -4,13 +4,92 @@
 
 '''
 import numpy as np
-from src.grid import Grid
+from numba import njit, prange
+from src.grid import Grid, inside_jit, get_cell_indices_jit, distance_to_next_boundary_jit
+from photon import initialize_packet_jit
 from src.star import Star
-from matplotlib import pyplot as plt
-from src.photon import emit_packet_from_star, propagate_packet
 from src.detectors import EscapeTracker
-from src.mcrt_viz import plot_absorption_map
-from src.jit_helpers import run_packets_parallel
+
+@njit(cache=True, fastmath=True)
+def propogate_packet_jit(pos, dir, tau_target, kappa,
+                         lower_bounds, upper_bounds, cell_size, n_cells, rho_gas, f_dust_to_gas):
+    """
+    Propagate packet through grid until absorbed or escaped.
+    
+    Works better for jit.
+    
+    Returns:
+    --------
+    outcome : int
+        0 : escaped
+        1 : absorbed
+    x, y, z : floats
+        (ix, iy, iz) if absorbed, (x, y, z) if escaped
+    """
+    
+    while True:
+        # checks if escaped
+        if not inside_jit(pos, lower_bounds, upper_bounds):
+            return 0, pos[0], pos[1], pos[2]
+
+        # get cell info
+        ix, iy, iz = get_cell_indices_jit(pos, lower_bounds, cell_size, n_cells)
+        rho_dust = rho_gas[ix, iy, iz] * f_dust_to_gas
+        distance = distance_to_next_boundary_jit(pos, dir, lower_bounds, cell_size, n_cells)
+        absorb = kappa * rho_dust
+        
+        # works for empty box
+        if absorb <= 0:
+            pos[0] += dir[0] * distance
+            pos[1] += dir[1] * distance
+            pos[2] += dir[2] * distance
+            continue
+
+        # distance left to absorb
+        d_absorb = tau_target / absorb
+        
+        # move packet, absorb
+        if d_absorb <= distance:
+            pos[0] += dir[0] * d_absorb
+            pos[1] += dir[1] * d_absorb
+            pos[2] += dir[2] * d_absorb
+            return 1, ix, iy, iz
+        else: 
+            tau_target -= absorb * distance
+            pos[0] += dir[0] * distance
+            pos[1] += dir[1] * distance
+            pos[2] += dir[2] * distance
+
+@njit(parallel=True, cache=True, fastmath=True)
+def run_packets_parallel(n_packets, star_pos, star_R, star_kappa, star_cdf,
+                         lower_bounds, upper_bounds, cell_size, n_cells, rho_gas, f_dust_to_gas):
+    """
+    Main MCRT simulation loop.
+    
+    Runs each packet parallel with jit. 
+    
+    Returns:
+    --------
+    outcome : list of ints
+        0 : escaped
+        1 : absorbed
+    x, y, z : list of floats
+        (ix, iy, iz) if absorbed, (x, y, z) if escaped
+    """
+    
+    # initialize outputs
+    outcome = np.zeros(n_packets)
+    final_x = np.zeros(n_packets)
+    final_y = np.zeros(n_packets)
+    final_z = np.zeros(n_packets)
+
+    for i in prange(n_packets):
+        pos, dir, tau_target, kappa = initialize_packet_jit(star_cdf, star_pos, star_R, star_kappa)
+
+        outcome[i], final_x[i], final_y[i], final_z[i] = propogate_packet_jit(pos, dir, tau_target, kappa,
+                                            lower_bounds, upper_bounds, cell_size, n_cells, rho_gas, f_dust_to_gas)
+        
+    return outcome, final_x, final_y, final_z
 
 def run_band_parallel(stars, grid, band, n_packets):
     """
@@ -105,90 +184,6 @@ def run_mcrt_jit(stars, grid, bands, n_packets):
 
     return results
 
-def initialize_packet(stars, L_packet, band):
-    """
-    Initialize one packet with luminosity-weighted star selection.
-    
-    Parameters:
-    -----------
-    stars : list of Star objects
-    L_packet : float
-        Luminosity carried by this packet (pre-calculated)
-    band : str or None
-        If specified ('B', 'V', or 'K'), run for single band
-        If None, sample from all bands (advanced option)
-    
-    Returns:
-    --------
-    packet : Photon object
-        Initialized with star position, direction, L_packet, band, kappa
-    """
-        
-    Ls = [star.L_band[band] for star in stars]
-    
-    cdf = np.cumsum(Ls / np.sum(Ls))
-    idx = np.searchsorted(cdf, np.random.rand())
-    
-    return emit_packet_from_star(stars[idx], band, L_packet)
-
-def run_mcrt(stars, grid, bands, n_packets):
-    """
-    Main MCRT simulation loop.
-    
-    Parameters:
-    -----------
-    stars : list of Star objects
-    grid : Grid object
-    bands : list of Band objects or strings ['B', 'V', 'K']
-    n_packets : int
-        Number of packets PER BAND
-    save_every : int
-        Save checkpoint every N packets
-    
-    Returns:
-    --------
-    results : dict
-        Per-band results. Structure: results[band] = {...}
-        Should include escape fractions, absorbed/escaped luminosities
-    
-    CRITICAL: L_packet = L_band_total / n_packets
-    where L_band_total is the sum of all stars' luminosities 
-    in the CURRENT BAND ONLY (not all bands combined).
-    
-    Note: Reset grid.L_absorbed between bands!
-    """
-    
-    results = { 'B': {'escape fraction': 0, 'absorbed luminosity': 0, 'escaped luminosity': 0}, 
-                'V': {'escape fraction': 0, 'absorbed luminosity': 0, 'escaped luminosity': 0}, 
-                'K': {'escape fraction': 0, 'absorbed luminosity': 0, 'escaped luminosity': 0} }
-    
-    tracker = EscapeTracker(bands)
-    
-    for band in bands:
-        Ls = [star.L_band[band] for star in stars]
-        L_packet = np.sum(Ls) / n_packets
-        
-        for i in range(n_packets):
-            packet = initialize_packet(stars, L_packet, band)
-            result, pos = propagate_packet(packet, grid)
-            if result == 'escaped':
-                tracker.record_escape(packet)
-            elif result == 'absorbed':
-                cell = grid.get_cell_indices(pos)
-                grid.n_absorbed[cell] += 1
-                grid.L_absorbed[cell] += packet.L
-    
-        results[band]['absorbed luminosity'] = grid.L_absorbed.sum()
-       
-        #plot_absorption_map(grid, band)
-        grid.n_absorbed[:] = 0
-        grid.L_absorbed[:] = 0
-    
-        results[band]['escaped luminosity'] = tracker.L_escaped_by_band[band]
-        results[band]['escape fraction'] = tracker.L_escaped_by_band[band] / np.sum(Ls)
-    
-    return results
-
 def check_energy_conservation(results, tolerance=0.001):
     """
     Verify energy conservation.
@@ -212,14 +207,7 @@ def main():
     masses = [10]
     stars = [Star(mass) for mass in masses]
     n_packets = 10000
-    '''
-    results = run_mcrt(stars, grid, bands, n_packets)
-    
-    print('----- Regular -----')
-    print('B escape fraction:', results['B']['escape fraction'])
-    print('V escape fraction:', results['V']['escape fraction'])
-    print('K escape fraction:', results['K']['escape fraction'])
-    '''
+
     results_jit = run_mcrt_jit(stars, grid, bands, n_packets)
     
     print('----- Jit Speedup -----')

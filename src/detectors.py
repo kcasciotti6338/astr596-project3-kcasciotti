@@ -4,7 +4,7 @@
 
 '''
 import numpy as np
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from src.utils import cartesian_to_sphere
 from grid import Grid
 

@@ -70,15 +70,3 @@ def calculate_band_averaged_opacity(draine_data, band_min, band_max, T_star):
     denominator = integrate_band(planck_function, band_min, band_max, T_star)
     
     return numerator / denominator
-
-def main():
-    """
-    Testing
-    """
-
-    draine = read_draine_opacity()
-
-    print('B avg opacity: ', calculate_band_averaged_opacity(draine, BANDS['B'][0], BANDS['B'][1], TSUN))
-
-if __name__ == "__main__":
-    main()
