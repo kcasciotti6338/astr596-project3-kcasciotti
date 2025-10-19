@@ -5,7 +5,7 @@
 '''
 import numpy as np
 from numba import njit
-from utils import random
+from src.utils import random
 
 class Photon:
     def __init__(self, pos, dir, L, band, star_id, kappa):

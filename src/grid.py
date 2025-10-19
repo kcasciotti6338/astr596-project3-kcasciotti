@@ -44,6 +44,20 @@ class Grid:
         self.L_absorbed = np.zeros(self.n_cells)
         self.n_absorbed = np.zeros(self.n_cells)
 
+    def sample_positions(self, N):
+        """
+        Sample positions within the grid
+        
+        Returns:
+        --------
+        pos : (N, 3) ndarray
+            x, y, z positions
+        """
+        low = - self.L/2 * 0.75
+        high = self.L/2 * 0.75
+        
+        return np.random.uniform(low, high, (N,3))
+
 @njit(cache=True, fastmath=True)
 def inside_jit(pos, lower_bounds, upper_bounds):
     """

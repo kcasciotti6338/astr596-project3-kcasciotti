@@ -61,7 +61,6 @@ def plot_opacity_validation(draine_data, band_opacities):
     plt.tight_layout()
     plt.show()
 
-
 def plot_convergence_analysis(n_packets_array, f_escape_array):
     """
     Plot convergence diagnostics vs number of packets.
@@ -122,7 +121,6 @@ def plot_convergence_analysis(n_packets_array, f_escape_array):
     plt.tight_layout()
     plt.show()
 
-
 def plot_sed(wavelength, L_input_by_band, L_output_by_band):
     """
     Plot a simple SED comparison using band centers.
@@ -176,7 +174,6 @@ def plot_sed(wavelength, L_input_by_band, L_output_by_band):
     ax.legend(loc='best')
     plt.tight_layout()
     plt.show()
-
 
 def create_rgb_composite(B_map, V_map, K_map):
     """
@@ -279,9 +276,6 @@ def plot_absorption_map(grid, band):
     plt.xlabel('x [cm]'); plt.ylabel('y [cm]')
     plt.title(f'{band} Band Absorption Map')
     plt.tight_layout(); plt.show()
-
-
-
 '''
 import numpy as np
 from matplotlib import pyplot as plt

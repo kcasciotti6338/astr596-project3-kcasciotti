@@ -277,19 +277,6 @@ def get_dust_density(self, indices=None, pos=None):
     else: 
         raise ValueError("Must pass either indices or position.")
     
-def sample_positions(self, N):
-    """
-    Sample positions within the grid
-    
-    Returns:
-    --------
-    pos : (N, 3) ndarray
-        x, y, z positions
-    """
-    low = - self.L/2 * 0.75
-    high = self.L/2 * 0.75
-    
-    return np.random.uniform(low, high, (N,3))
 
 
 

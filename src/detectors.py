@@ -6,7 +6,7 @@
 import numpy as np
 from dataclasses import dataclass
 from src.utils import cartesian_to_sphere
-from grid import Grid
+from src.grid import Grid
 
 @dataclass
 class EscapeTracker:
@@ -19,6 +19,7 @@ class EscapeTracker:
     - n_escaped: packet counts
     - escape_fraction: escape fraction
     - grid: grid after mcrt
+    - L_input: total stars luminosity
     
     - L_escaped_total: total escaped luminosity    
     - escape_directions: list of (theta, phi) for each packet
@@ -29,18 +30,19 @@ class EscapeTracker:
     n_escaped: float = 0.0
     escape_fraction: float = 0.0
     grid: Grid = None
+    L_input: float = 0.0
     
     #L_escaped_total: float
     #escape_directions_total: list
 
-    def record_escapes(self, outcomes, L_packet, L_input):
+    def record_escapes(self, outcomes, L_packet):
         """
         Record all escaped packets.
         """
         
         self.n_escaped += (len(outcomes) - np.sum(outcomes))
         self.L_escaped += (self.n_escaped * L_packet)
-        self.escape_fraction = self.L_escaped / L_input
+        self.escape_fraction = self.L_escaped / self.L_input
         
         #self.L_escaped_total += self.n_escaped
         #theta, phi = cartesian_to_sphere(dir[0], dir[1], dir[2])

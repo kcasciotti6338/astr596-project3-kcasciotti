@@ -6,7 +6,7 @@
 import numpy as np
 from numba import njit, prange
 from src.grid import Grid, inside_jit, get_cell_indices_jit, distance_to_next_boundary_jit
-from photon import initialize_packet_jit
+from src.photon import initialize_packet_jit
 from src.star import Star
 from src.detectors import EscapeTracker
 
@@ -141,7 +141,8 @@ def run_band_parallel(stars, grid, band, n_packets):
                                            lower, upper, cell_size, n_cells, grid.rho_gas, grid.f_dust_to_gas)
 
     results = EscapeTracker()
-    results.record_escapes(outcomes, L_packet, L_total)
+    results.L_input = L_total
+    results.record_escapes(outcomes, L_packet)
     results.record_absorbs(grid, outcomes, x, y, z, L_packet)
     
     return results
@@ -172,7 +173,7 @@ def run_mcrt_jit(stars, grid, bands, n_packets):
             - grid
     """
     
-    results = {'L_escaped_total': 0}
+    results = {'L_escaped_total': 0, 'L_absorbed_total': 0, 'L_input_total': 0}
     
     for band in bands:
         
@@ -181,6 +182,8 @@ def run_mcrt_jit(stars, grid, bands, n_packets):
 
         results[band] = run_band_parallel(stars, grid, band, n_packets)
         results['L_escaped_total'] += results[band].L_escaped
+        results['L_absorbed_total'] += np.sum(results[band].grid.L_absorbed)
+        results['L_input_total'] += results[band].L_input
 
     return results
 
@@ -195,7 +198,11 @@ def check_energy_conservation(results, tolerance=0.001):
     error : float
         Fractional energy error
     """
-    pass
+    numerator = results['L_input_total'] - (results['L_absorbed_total'] + results['L_escaped_total'])
+    error = np.abs(numerator) / results['L_input_total']
+    
+    if error < tolerance: return True, error
+    else: return False, error
 
 def main():
     """
@@ -204,16 +211,18 @@ def main():
     
     grid = Grid(128)
     bands = ['B', 'V', 'K']
-    masses = [10]
-    stars = [Star(mass) for mass in masses]
+    masses = [10, 20, 30, 50]
+    stars = [Star(mass, position=grid.sample_positions(1)) for mass in masses]
     n_packets = 10000
 
     results_jit = run_mcrt_jit(stars, grid, bands, n_packets)
+    check, energy = check_energy_conservation(results_jit)
     
     print('----- Jit Speedup -----')
     print('B escape fraction:', results_jit['B'].escape_fraction)
     print('V escape fraction:', results_jit['V'].escape_fraction)
     print('K escape fraction:', results_jit['K'].escape_fraction)
+    print('Energy conservation: ', check)
     
     pass
 

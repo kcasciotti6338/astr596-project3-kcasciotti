@@ -1,8 +1,9 @@
 # test_validation.py
 
+import numpy as np
 from src.grid import Grid
 from src.star import Star
-from src.transport import run_mcrt
+from src.transport import run_mcrt_jit
 
 def test_empty_box(grid, n_packets=1000):
     """
@@ -13,14 +14,33 @@ def test_empty_box(grid, n_packets=1000):
     passed : bool
     f_escape : float (should be 1.0)
     """
-    
+    grid.rho_gas[:] = 0
     bands = ['B', 'V', 'K']
-    save_every = 1
     star = [Star(1)]
     
-    results = run_mcrt(star, grid, bands, n_packets, save_every)
+    results = run_mcrt_jit(star, grid, bands, n_packets)
     
-    if any(results[band]['absorbed luminosity'] != 0 for band in bands):
+    if (results['L_absorbed_total'] != 0):
+        return False
+    else: 
+        return True
+    
+def test_opaque_box(grid, n_packets=1000):
+    """
+    Test that all packets escape in empty medium.
+    
+    Returns:
+    --------
+    passed : bool
+    f_escape : float (should be 1.0)
+    """
+    grid.rho_gas[:] = 1000
+    bands = ['B', 'V', 'K']
+    star = [Star(1)]
+    
+    results = run_mcrt_jit(star, grid, bands, n_packets)
+    
+    if (results['L_escaped_total'] != 0):
         return False
     else: 
         return True
@@ -38,12 +58,10 @@ def test_uniform_sphere(star, grid, kappa, n_packets=10000):
     """
     
     bands = ['B', 'V', 'K']
-    save_every = 1
     star = [Star(1)]
     
-    results = run_mcrt(star, grid, bands, n_packets, save_every)
+    results = run_mcrt_jit(star, grid, bands, n_packets)
     
-
     return results
 
 def test_convergence_scaling(results_list):
@@ -59,18 +77,36 @@ def test_convergence_scaling(results_list):
     passed : bool
     scaling_exponent : float (should be close to -0.5)
     """
-    pass
+    
+    for result in results_list:
+        fractions[i] = (results['B'].escape_fraction)
+                    
+    resid = np.abs(fractions - fractions[-1])
+
+    m = resid > 0
+    if not np.any(m):
+        resid = resid + 1e-12
+        m = np.ones_like(resid, dtype=bool)
+        
+    slope, intercept = np.polyfit(np.log(Ns[m]), np.log(resid[m]), 1)
+    
+    if slope > -0.9 and slope < -0.3:
+        return True, slope
+    else:
+        return False, slope
+    
 
 def main():
     """
     Testing
     """
-    empty_box = Grid(16, 1, 0)
-    print('Test empty box:', test_empty_box(empty_box))
+    grid = Grid(128, 1)
+    star = [Star(10)]
     
-    grid = Grid(16, 1, 0.01)
-    star = [Star(1)]
-    print('Test uniform sphere:', test_uniform_sphere(star, grid, 0.01))
+    print('Test empty box:', test_empty_box(grid))
+    print('Test opaque box:', test_opaque_box(grid))
+    print('Convergence Scaling:', test_convergence_scaling())
+
 
 if __name__ == "__main__":
     main()
