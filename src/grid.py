@@ -58,6 +58,31 @@ class Grid:
         
         return np.random.uniform(low, high, (N,3))
 
+    def fill_sphere(self):
+        '''
+        Sets rho_dust outside of sphere to 0.
+        For uniform sphere test.
+        '''
+        r = self.L/2
+        nx, ny, nz = map(int, self.n_cells)
+        
+        xs = self.lower_bounds[0] + (np.arange(nx) + 0.5) * self.cell_size[0]
+        ys = self.lower_bounds[1] + (np.arange(ny) + 0.5) * self.cell_size[1]
+        zs = self.lower_bounds[2] + (np.arange(nz) + 0.5) * self.cell_size[2]
+
+        dx2 = xs**2
+        dy2 = ys**2
+        dz2 = zs**2
+        r2 = dx2[:, None, None] + dy2[None, :, None] + dz2[None, None, :]
+
+        self.rho_gas[r2 > r**2] = 0
+
+    def reset_rho_gas(self):
+        '''
+        Resets rho gas after testing. 
+        '''
+        self.rho_gas = np.ones(self.n_cells) * 3.84e-21
+                        
 @njit(cache=True, fastmath=True)
 def inside_jit(pos, lower_bounds, upper_bounds):
     """

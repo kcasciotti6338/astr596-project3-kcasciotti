@@ -166,6 +166,9 @@ def run_mcrt_jit(stars, grid, bands, n_packets):
     --------
     results : dict 
         L_escaped_total
+        L_absorbed_total
+        L_input_total
+        n_packets
         EscapeTracker - per-band results. Structure: results[band].attribute = ...
             - L_escaped
             - n_escaped
@@ -173,7 +176,7 @@ def run_mcrt_jit(stars, grid, bands, n_packets):
             - grid
     """
     
-    results = {'L_escaped_total': 0, 'L_absorbed_total': 0, 'L_input_total': 0}
+    results = {'L_escaped_total': 0, 'L_absorbed_total': 0, 'L_input_total': 0, 'n_packets': n_packets}
     
     for band in bands:
         
@@ -187,23 +190,6 @@ def run_mcrt_jit(stars, grid, bands, n_packets):
 
     return results
 
-def check_energy_conservation(results, tolerance=0.001):
-    """
-    Verify energy conservation.
-    
-    Returns:
-    --------
-    conserved : bool
-        True if |L_in - (L_abs + L_esc)|/L_in < tolerance
-    error : float
-        Fractional energy error
-    """
-    numerator = results['L_input_total'] - (results['L_absorbed_total'] + results['L_escaped_total'])
-    error = np.abs(numerator) / results['L_input_total']
-    
-    if error < tolerance: return True, error
-    else: return False, error
-
 def main():
     """
     Testing
@@ -216,13 +202,11 @@ def main():
     n_packets = 10000
 
     results_jit = run_mcrt_jit(stars, grid, bands, n_packets)
-    check, energy = check_energy_conservation(results_jit)
     
     print('----- Jit Speedup -----')
     print('B escape fraction:', results_jit['B'].escape_fraction)
     print('V escape fraction:', results_jit['V'].escape_fraction)
     print('K escape fraction:', results_jit['K'].escape_fraction)
-    print('Energy conservation: ', check)
     
     pass
 
