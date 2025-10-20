@@ -52,7 +52,7 @@ This runs only a single simulation. Will output a dictionary of results.
 
 # Key results summary:
 
-All validation tests passed successfully. The empty-box test produced a 100% escape fraction, the opaque-box test trapped all packets, and the uniform-sphere result matched the analytical $\esp{-\tau}$ prediction within $3\sigma$ uncertainty. Energy conservation was consistently better than the 0.1% tolerance, and the escape fraction convergence followed the expected $N^(-1/2)$ trend. 
+All validation tests passed successfully. The empty-box test produced a 100% escape fraction, the opaque-box test trapped all packets, and the uniform-sphere result matched the analytical $\exp{-\tau}$ prediction within $3\sigma$ uncertainty. Energy conservation was consistently better than the 0.1% tolerance, and the escape fraction convergence followed the expected $N^{-1/2}$ trend. 
 
 The physical results all behaved as expected. The higher the wavelength, the lower the escape fraction, which aligns with the observed reddening. The absorption maps also show that the most light is absorbed near the host star. The RGB composite images show very well how the lower mass stars peak in the red, rather than in the blue, like the more massive stars. 
 
