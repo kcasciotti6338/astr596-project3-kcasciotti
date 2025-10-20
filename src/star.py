@@ -68,7 +68,7 @@ class Star:
         Normalize so 1 M_sun gives ~10 Gyr for present-day Sun
         But YOUR 1 M_sun star has L=0.698, so t_MS will be ~14 Gyr
         '''
-        return self.mass / self.L_bol * 10
+        return self.mass / (self.L_bol/LSUN) * 10
     
     def t_KH(self):
         '''
@@ -146,7 +146,7 @@ class Star:
             spectral type
         """
         
-        filename = '/Users/kcasc/astr596/projects/astr-596-project-03-kcasciotti6338/data/EEM_dwarf_UBVIJHK_colors_Teff.txt'
+        filename = 'data/EEM_dwarf_UBVIJHK_colors_Teff.txt'
         data = np.genfromtxt(filename, skip_header=23, max_rows=118, usecols=(0, 1), dtype=[('sp_t', 'U10'), ('T_eff', 'f8')])   
         
         idx = np.argmin(np.abs(data['T_eff'] - (self.T_eff)))

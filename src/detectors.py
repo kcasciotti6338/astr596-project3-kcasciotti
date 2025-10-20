@@ -5,8 +5,8 @@
 '''
 import numpy as np
 from dataclasses import dataclass
-from src.utils import cartesian_to_sphere
 from src.grid import Grid
+from copy import deepcopy
 
 @dataclass
 class EscapeTracker:
@@ -20,6 +20,7 @@ class EscapeTracker:
     - escape_fraction: escape fraction
     - grid: grid after mcrt
     - L_input: total stars luminosity
+    - kappa_bar: band-averaged opacity
     
     - L_escaped_total: total escaped luminosity    
     - escape_directions: list of (theta, phi) for each packet
@@ -31,22 +32,16 @@ class EscapeTracker:
     escape_fraction: float = 0.0
     grid: Grid = None
     L_input: float = 0.0
-    
-    #L_escaped_total: float
-    #escape_directions_total: list
+    kappa_bar: float = 0.0
 
     def record_escapes(self, outcomes, L_packet):
         """
         Record all escaped packets.
         """
-        
-        self.n_escaped += (len(outcomes) - np.sum(outcomes))
-        self.L_escaped += (self.n_escaped * L_packet)
+        new_escaped = (len(outcomes) - np.sum(outcomes))
+        self.n_escaped += new_escaped
+        self.L_escaped += (new_escaped * L_packet)
         self.escape_fraction = self.L_escaped / self.L_input
-        
-        #self.L_escaped_total += self.n_escaped
-        #theta, phi = cartesian_to_sphere(dir[0], dir[1], dir[2])
-        #self.escape_directions.append((theta, phi))
         
     def record_absorbs(self, grid, outcomes, x, y, z, L_packet):
         """
@@ -65,4 +60,31 @@ class EscapeTracker:
         grid.n_absorbed += counts
         grid.L_absorbed += counts * L_packet
         
-        self.grid = grid
+        self.grid = deepcopy(grid)
+        
+def build_results_table(results, bands = ('B','V','K'), out_csv = "outputs/results/results_table.csv"):
+    """
+    Builds and saves results table. 
+    Per band: 'Band-averaged opacity','Input luminosity','Escaped luminosity','Escape fraction','Mean optical depth'
+    """
+    rows = []
+    for band in bands:
+        if band not in results:
+            continue
+        
+        tau = -np.log(results[band].escape_fraction)
+        
+        rows.append({'Quantity': f'{band}-band',
+                     'Band-averaged opacity': results[band].kappa_bar,
+                     'Input luminosity': results[band].L_input,
+                     'Escaped luminosity': results[band].L_escaped,
+                     'Escape fraction': results[band].escape_fraction,
+                     'Mean optical depth': tau })
+
+    header = ['Quantity','Band-averaged opacity','Input luminosity','Escaped luminosity','Escape fraction','Mean optical depth']
+    with open(out_csv, 'w') as f:
+        f.write(','.join(header) + '\n')
+        for r in rows:
+            f.write(','.join(str(r[h]) for h in header) + '\n')
+
+    return rows

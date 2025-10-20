@@ -278,8 +278,38 @@ def get_dust_density(self, indices=None, pos=None):
         raise ValueError("Must pass either indices or position.")
     
 
+def test_main():
+    """
+    Testing Testing
+    """
+    grid = Grid(128, 1)
+    star = [Star(10)]
+    
+    print('Test empty box:', test_empty_box(grid))
+    print('Test opaque box:', test_opaque_box(grid))
+    print('Test uniform sphere:', test_uniform_sphere(star, grid))
+    
+    #print('Convergence Scaling:', test_convergence_scaling())
 
+def transport_main():
+    """
+    Transport Testing
+    """
+    
+    grid = Grid(128)
+    bands = ['B', 'V', 'K']
+    masses = [10, 20, 30, 50]
+    stars = [Star(mass, position=grid.sample_positions(1)) for mass in masses]
+    n_packets = 10000
 
+    results_jit = run_mcrt_jit(stars, grid, bands, n_packets)
+    
+    print('----- Jit Speedup -----')
+    print('B escape fraction:', results_jit['B'].escape_fraction)
+    print('V escape fraction:', results_jit['V'].escape_fraction)
+    print('K escape fraction:', results_jit['K'].escape_fraction)
+    
+    pass
 
 def star_main():
     """
@@ -358,9 +388,5 @@ def utils_main():
     
     b = integrate_band(planck_function, BANDS['B'][0], BANDS['B'][1], TSUN)
     print('integrated B band: ', b)
-
-
-if __name__ == "__main__":
-    main()
 
 

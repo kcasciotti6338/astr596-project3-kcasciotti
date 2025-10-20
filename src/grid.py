@@ -81,7 +81,7 @@ class Grid:
         '''
         Resets rho gas after testing. 
         '''
-        self.rho_gas = np.ones(self.n_cells) * 3.84e-21
+        self.rho_gas[:] = 3.84e-21
                         
 @njit(cache=True, fastmath=True)
 def inside_jit(pos, lower_bounds, upper_bounds):

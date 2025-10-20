@@ -45,7 +45,7 @@ def test_opaque_box(grid, n_packets=1000):
     if (results['L_escaped_total'] != 0): return False
     else: return True
 
-def test_uniform_sphere(star, grid, n_packets=10000):
+def test_uniform_sphere(stars, grid, n_packets=10000):
     """
     Test escape fraction against analytical solution.
     Star at center, uniform medium.
@@ -57,20 +57,26 @@ def test_uniform_sphere(star, grid, n_packets=10000):
         |f_numerical - f_analytical| / f_analytical
     """
     
-    grid.fill_sphere()  
+    grid.fill_sphere()
     bands = ['B']
-    kappa = star[0].kappa_band['B']
+
+    from src.star import Star
+    star_center = [Star(stars[0].mass, position=np.array([0.0,0.0,0.0]))]
+
     r = grid.L/2
     rho_dust = grid.f_dust_to_gas * grid.rho_gas[grid.rho_gas > 0][0]
 
-    tau = kappa * rho_dust * r
+    Lw = np.array([s.L_band['B'] for s in star_center])
+    kw = np.array([s.kappa_band['B'] for s in star_center])
+    kappa_eff = np.sum(Lw * kw) / np.sum(Lw)
+
+    tau = kappa_eff * rho_dust * r
     f_analytical = np.exp(-tau)
 
-    results = run_mcrt_jit(star, grid, bands, n_packets)
+    results = run_mcrt_jit(star_center, grid, bands, n_packets)
     f_numerical = float(results['B'].escape_fraction)
 
     residual = abs(f_numerical - f_analytical) / f_analytical
-    
     grid.reset_rho_gas()
     
     if (residual < 0.05): return True, residual
@@ -89,21 +95,19 @@ def test_convergence_scaling(results_list):
     passed : bool
     scaling_exponent : float (should be close to -0.5)
     """
-    fractions = np.zeros(len(results_list))
-    Ns = np.zeros(len(results_list))
-    
-    for i, result in enumerate(results_list):
-        fractions[i] = result['B'].escape_fraction
-        Ns[i] = result['n_packets']
-                    
-    resid = np.abs(fractions - fractions[-1])
+    Ns = np.array([N for (N, _) in results_list], dtype=float)
+    fractions = np.array([res['B'].escape_fraction for (_, res) in results_list], dtype=float)
 
+    order = np.argsort(Ns)
+    Ns, fractions = Ns[order], fractions[order]
+
+    resid = np.abs(fractions - fractions[-1])
     m = resid > 0
     if not np.any(m):
         resid = resid + 1e-12
         m = np.ones_like(resid, dtype=bool)
-        
-    slope, intercept = np.polyfit(np.log(Ns[m]), np.log(resid[m]), 1)
+
+    slope, _ = np.polyfit(np.log(Ns[m]), np.log(resid[m]), 1)
     
     if slope > -0.9 and slope < -0.3: return True, slope
     else: return False, slope
@@ -124,20 +128,3 @@ def check_energy_conservation(results, tolerance=0.001):
     
     if error < tolerance: return True, error
     else: return False, error
-
-def main():
-    """
-    Testing
-    """
-    grid = Grid(128, 1)
-    star = [Star(10)]
-    
-    print('Test empty box:', test_empty_box(grid))
-    print('Test opaque box:', test_opaque_box(grid))
-    print('Test uniform sphere:', test_uniform_sphere(star, grid2))
-    
-    #print('Convergence Scaling:', test_convergence_scaling())
-
-
-if __name__ == "__main__":
-    main()

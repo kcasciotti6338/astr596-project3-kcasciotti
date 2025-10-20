@@ -33,8 +33,6 @@ def sample_isotropic_direction():
     """
     Sample random isotropic direction.
     
-    (Same as original function, delete one!)
-    
     Returns:
     --------
     dir_x, dir_y, dir_z : float

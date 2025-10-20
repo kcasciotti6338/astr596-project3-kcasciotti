@@ -20,7 +20,7 @@ def read_draine_opacity():
         'dust_to_H': float (mass ratio)
     """
 
-    filename = '/Users/kcasc/astr596/projects/astr-596-project-03-kcasciotti6338/data/kext_albedo_WD_MW_5.5A_30.txt'
+    filename = 'data/kext_albedo_WD_MW_5.5A_30.txt'
     data = np.genfromtxt(filename, skip_header=80, names=['wavelength','albedo','kappa'], usecols=(0, 1, 4))
     
     lam_um  = np.asarray(data['wavelength'], dtype=float)

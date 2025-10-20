@@ -1,112 +1,153 @@
-# mcrt_viz.py
-
 import os
+import math
+from typing import Tuple
 import numpy as np
-from matplotlib import pyplot as plt
+import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
+from src.constants import PC
 
-def plot_opacity_validation(draine_data, band_opacities, save=False, outdir="outputs/figures"):
+def _ensure_dir(path: str) -> str:
+    os.makedirs(path, exist_ok=True)
+    return path
+
+def _band_center_and_span(band_limits_cm: Tuple[float, float]) -> Tuple[float, float]:
+    lam_min, lam_max = band_limits_cm
+    lam_c = math.sqrt(lam_min * lam_max)  
+    span_ln = math.log(lam_max/lam_min) 
+    return lam_c, span_ln
+
+def plot_opacity_with_band_means(draine_data, band_opacities, BANDS, save = True, 
+                                 outdir = "outputs/figures", run_dir: str | None = None):
     """
-    Plot the dust opacity curve and band-averaged points.
-    Returns (fig, ax).
+    Plot Draine with shaded B/V/K passbands and markers at band-averaged opacities.
     """
     lam_cm = np.asarray(draine_data['wavelength'])
     kappa = np.asarray(draine_data['kappa'])
     lam_um = lam_cm * 1e4
 
     fig, ax = plt.subplots(figsize=(7, 5))
-    ax.loglog(lam_um, kappa, lw=1.8, label='Draine opacity')
+    ax.loglog(lam_um, kappa, lw=1.8, label='Draine opacity (RV=5.5)')
 
-    defaults = {'B': 0.44, 'V': 0.55, 'K': 2.2}
-    for b, kap in band_opacities.items():
-        if b in defaults:
-            ax.scatter(defaults[b], kap, s=60, zorder=5)
-            ax.text(defaults[b], kap, f' {b}', va='center')
+    # Shade bands + markers
+    band_colors = {'B': (0.65,0.80,1.0,0.2), 'V': (0.80,1.0,0.65,0.2), 'K': (1.0,0.70,0.70,0.2)}
+    center_defaults_um = {'B': 0.44, 'V': 0.55, 'K': 2.2}
 
-    ax.set_xlabel('Wavelength [μm]')
-    ax.set_ylabel(r'$\kappa$ [cm$^2$ g$^{-1}$]')
-    ax.set_title('Dust opacity with band averages')
+    for b, (lam_min, lam_max) in BANDS.items():
+        # shade
+        ax.axvspan(lam_min*1e4, lam_max*1e4, color=band_colors.get(b, (0.8,0.8,0.8,0.2)), lw=0)
+        # marker at center with provided kappa_bar
+        if b in band_opacities:
+            x = center_defaults_um.get(b, np.sqrt(lam_min*lam_max)*1e4)
+            y = band_opacities[b]
+            ax.scatter([x], [y], s=55, zorder=5)
+            ax.text(x, y, f"  {b}", va='center')
+
+    ax.set_xlabel('Wavelength (\u00b5m)')
+    ax.set_ylabel(r'$\kappa\,(\mathrm{cm}^2\,\mathrm{g}^{-1})$')
+    ax.set_title('Dust opacity with B/V/K band means')
     ax.grid(True, which='both', ls=':', alpha=0.35)
     ax.legend()
 
     if save:
-        os.makedirs(outdir, exist_ok=True)
-        fig.savefig(os.path.join(outdir, "opacity_validation.png"), dpi=200)
+        folder = _ensure_dir(os.path.join(outdir, run_dir) if run_dir else outdir)
+        fig.savefig(os.path.join(folder, "opacity_with_band_means.png"), dpi=200, bbox_inches='tight')
+        plt.close(fig)
 
     return fig, ax
 
-
-def plot_convergence_analysis(results_list, band='B', save=False, outdir="outputs/figures"):
+def plot_band_sed_lambdaL(results, BANDS, bands = ('B','V','K'), save = True,
+                          outdir = "outputs/figures", run_dir: str | None = None):
     """
-    Plot convergence diagnostics using results_list = [(N, results_dict), ...]
-    where results_dict is from run_mcrt_jit.
-    Returns (fig, (ax1, ax2)).
+    Plot band SED: intrinsic vs escaped, normalized
     """
-    Ns = np.array([r[0] for r in results_list], dtype=float)
-    f_escape = np.array([r[1][band].escape_fraction for r in results_list], dtype=float)
+    lam_um, L_in_proxy, L_esc_proxy = [], [], []
 
-    order = np.argsort(Ns)
-    Ns, f_escape = Ns[order], f_escape[order]
+    for b in bands:
+        if b not in BANDS or b not in results:
+            continue
+        lam_c, span_ln = _band_center_and_span(BANDS[b]) 
+        lam_um.append(lam_c * 1e4)
 
-    f_inf = f_escape[-1]
-    resid = np.abs(f_escape - f_inf)
+        L_in = results[b].L_input  
+        L_esc = results[b].L_escaped
+        
+        Li = L_in / max(span_ln, 1e-12)
+        Le = L_esc / max(span_ln, 1e-12)
+        L_in_proxy.append(Li)
+        L_esc_proxy.append(Le)
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7, 7), gridspec_kw={'height_ratios':[2,1.6]})
-    plt.subplots_adjust(hspace=0.25)
+    lam_um = np.array(lam_um)
+    L_in_proxy = np.array(L_in_proxy)
+    L_esc_proxy = np.array(L_esc_proxy)
 
-    ax1.plot(Ns, f_escape, 'o-', lw=1.5)
-    ax1.set_xscale('log')
-    ax1.set_xlabel('Number of packets, N')
-    ax1.set_ylabel('Escape fraction')
-    ax1.set_title(f'Convergence test – {band}-band')
-    ax1.grid(True, ls=':', alpha=0.4)
+    Lmax = max(float(np.max(L_in_proxy)), float(np.max(L_esc_proxy)), 1.0)
+    L_in_n = L_in_proxy / Lmax
+    L_esc_n = L_esc_proxy / Lmax
 
-    ax2.loglog(Ns, resid + 1e-30, 'o-', lw=1.5, label='|f(N) - f_max|')
-    ref = (1.0/np.sqrt(Ns))
-    ref *= (resid[0]/ref[0]) if resid[0]>0 else 1
-    ax2.loglog(Ns, ref, '--', label=r'$\propto 1/\sqrt{N}$')
-    ax2.set_xlabel('Number of packets, N')
-    ax2.set_ylabel('Residual')
-    ax2.grid(True, ls=':', alpha=0.4)
-    ax2.legend()
+    fig, ax = plt.subplots(figsize=(7,5))
+    ax.loglog(lam_um, L_in_n, marker='o', lw=1.8, label='Intrinsic (normalized)')
+    ax.loglog(lam_um, L_esc_n, marker='s', lw=1.8, label='Escaped (normalized)')
 
-    if save:
-        os.makedirs(outdir, exist_ok=True)
-        fig.savefig(os.path.join(outdir, f"convergence_{band}.png"), dpi=200)
+    for x, b in zip(lam_um, bands):
+        ax.text(x, np.interp(x, lam_um, L_esc_n), f" {b}", va='bottom')
 
-    return fig, (ax1, ax2)
-
-
-def plot_sed(results, bands, save=False, outdir="outputs/figures"):
-    """
-    Plot input vs escaped luminosity per band from run_mcrt_jit results.
-    Returns (fig, ax).
-    """
-    x = np.arange(len(bands))
-    L_in = [results[b].L_input for b in bands]
-    L_esc = [results[b].L_escaped for b in bands]
-
-    fig, ax = plt.subplots(figsize=(7, 5))
-    width = 0.35
-    ax.bar(x - width/2, L_in, width, label='Input (stellar)')
-    ax.bar(x + width/2, L_esc, width, label='Escaped')
-    ax.set_xticks(x)
-    ax.set_xticklabels(bands)
-    ax.set_ylabel('Luminosity [erg s$^{-1}$]')
-    ax.set_title('Input vs Escaped Luminosity by Band')
+    ax.set_xlabel('Wavelength (\u00b5m)')
+    ax.set_ylabel(r'Normalized $\lambda L_\lambda$ (proxy)')
+    ax.set_title('Band SED: intrinsic vs escaped (normalized)')
+    ax.grid(True, which='both', ls=':', alpha=0.35)
     ax.legend()
-    ax.grid(alpha=0.3, ls=':')
 
     if save:
-        os.makedirs(outdir, exist_ok=True)
-        fig.savefig(os.path.join(outdir, "sed_comparison.png"), dpi=200)
+        folder = _ensure_dir(os.path.join(outdir, run_dir) if run_dir else outdir)
+        fig.savefig(os.path.join(folder, "band_sed_lambdaL.png"), dpi=200, bbox_inches='tight')
+        plt.close(fig)
 
     return fig, ax
 
-
-def create_rgb_composite(B_map, V_map, K_map, save=False, outdir="outputs/figures"):
+def plot_absorption_map_single(grid, band, save=False, outdir="outputs/figures", run_dir=None):
     """
-    Combine B, V, K 2D arrays into RGB image. Returns (fig, ax).
+    Single-band absorption map with white-on-black style.
+    Orientation fixed (no transpose). Returns (fig, ax).
+    """
+    proj = np.sum(grid.L_absorbed, axis=2)
+    extent = [grid.lower_bounds[0]/PC, grid.upper_bounds[0]/PC,
+            grid.lower_bounds[1]/PC, grid.upper_bounds[1]/PC]
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    ax.set_facecolor('black')
+
+    vmax = float(np.max(proj))
+    if vmax <= 0:
+        ax.imshow(np.zeros((10, 10)), origin='lower', extent=extent,
+                  cmap='gray', vmin=0, vmax=1, aspect='equal')
+        ax.text(0.5, 0.5, 'no absorption', color='w',
+                ha='center', va='center', transform=ax.transAxes)
+    else:
+        proj_mask = np.ma.masked_less_equal(proj, 0)
+        vmin = float(proj_mask.min())
+        im = ax.imshow(proj_mask, origin='lower', extent=extent,
+                       cmap='gray', norm=LogNorm(vmin=vmin, vmax=vmax),
+                       aspect='equal')
+        fig.colorbar(im, ax=ax, label='Absorbed Luminosity (log scale)')
+
+    ax.set_xlabel('x (pc)')
+    ax.set_ylabel('y (pc)')
+    ax.set_title(f'{band} Band Absorption Map')
+
+    if save:
+        folder = _ensure_dir(os.path.join(outdir, run_dir) if run_dir else outdir)
+        fig.savefig(os.path.join(folder, f"absorption_{band}.png"),
+                    dpi=200, bbox_inches='tight')
+        plt.close(fig)
+
+    return fig, ax
+
+def create_rgb_composite(B_map, V_map, K_map, extent_cm=None,
+                         save=False, outdir="outputs/figures", run_dir=None):
+    """
+    Combine B, V, K 2D arrays into an RGB image (R=K, G=V, B=B).
+    Per-channel 99th-percentile normalization + asinh stretch.
+    Adds axis labels so it matches the absorption maps. Returns (fig, ax).
     """
     def _prep_channel(img):
         img = np.clip(np.asarray(img, float), 0, None)
@@ -122,102 +163,246 @@ def create_rgb_composite(B_map, V_map, K_map, save=False, outdir="outputs/figure
     rgb = np.clip(np.dstack([R, G, B]), 0, 1)
 
     fig, ax = plt.subplots(figsize=(6, 6))
-    ax.imshow(rgb, origin='lower', aspect='equal')
-    ax.set_title('RGB Composite (R=K, G=V, B=B)')
-    ax.axis('off')
-
-    if save:
-        os.makedirs(outdir, exist_ok=True)
-        fig.savefig(os.path.join(outdir, "rgb_composite.png"), dpi=200)
-
-    return fig, ax
-
-
-def plot_absorption_map(grid, band, save=False, outdir="outputs/figures"):
-    """
-    2D projection of absorbed luminosity (sum over z-axis).
-    Returns (fig, ax).
-    """
-    proj = np.sum(grid.L_absorbed, axis=2)
-    x_min, x_max = grid.lower_bounds[0], grid.upper_bounds[0]
-    y_min, y_max = grid.lower_bounds[1], grid.upper_bounds[1]
-
-    fig, ax = plt.subplots(figsize=(6,5))
-    vmax = proj.max()
-    if vmax <= 0:
-        ax.imshow(np.zeros_like(proj).T, origin='lower', extent=[x_min,x_max,y_min,y_max],
-                  aspect='equal', cmap='Greys', vmin=0, vmax=1)
-        ax.set_title(f'{band} Band Absorption Map (no absorption)')
+    ax.set_facecolor('black')
+    if extent_cm is not None:
+        extent_pc = [v/PC for v in extent_cm]
+        ax.imshow(rgb, origin='lower', aspect='equal', extent=extent_pc)
     else:
-        proj_masked = np.ma.masked_less_equal(proj, 0)
-        cmap = plt.get_cmap('Greys').copy()
-        cmap.set_bad('black')
-        vmin = proj_masked.min()
-        im = ax.imshow(proj_masked.T, origin='lower',
-                       extent=[x_min,x_max,y_min,y_max], aspect='equal',
-                       cmap=cmap, norm=LogNorm(vmin=vmin, vmax=vmax))
-        fig.colorbar(im, ax=ax, label='Absorbed Luminosity (log scale)')
-        ax.set_title(f'{band} Band Absorption Map')
-    ax.set_xlabel('x [cm]')
-    ax.set_ylabel('y [cm]')
-    plt.tight_layout()
+        ax.imshow(rgb, origin='lower', aspect='equal')
+
+    ax.set_title('RGB Composite')
+    ax.set_xlabel('x (pc)')
+    ax.set_ylabel('y (pc)')
 
     if save:
-        os.makedirs(outdir, exist_ok=True)
-        fig.savefig(os.path.join(outdir, f"absorption_map_{band}.png"), dpi=200)
+        folder = _ensure_dir(os.path.join(outdir, run_dir) if run_dir else outdir)
+        fig.savefig(os.path.join(folder, "rgb_composite.png"),
+                    dpi=200, bbox_inches='tight')
+        plt.close(fig)
 
     return fig, ax
 
-
-def make_plots(results, draine_data=None, bands=['B','V','K'], save=True):
+def plot_absorption_rgb_grid(results_list, bands=('B','V','K'),
+                             save=False, outdir="outputs/figures/final_plots"):
     """
-    Generate and optionally save all standard plots from run_mcrt_jit results.
-    Returns a dict of (fig, ax) tuples.
+    Build a montage: rows = different N, columns = B, V, K, RGB composite.
+    Axes in pc; black plot backgrounds; only column headers at top.
+    Per-band maps colored (B→Blues, V→Greens, K→Reds).
+    Returns (fig, axes).
     """
-    figs = {}
+    # figure layout
+    n_rows = len(results_list)
+    n_cols = len(bands) + 1  # + RGB
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(3.9*n_cols, 3.7*n_rows))
+    if n_rows == 1:
+        axes = np.atleast_2d(axes)
 
-    if draine_data is not None:
-        band_opacities = {b: results[b].grid.L_absorbed.sum() for b in bands if b in results}
-        figs['opacity'] = plot_opacity_validation(draine_data, band_opacities, save=save)
+    # column titles once
+    col_titles = list(bands) + ['RGB composite']
+    for j, title in enumerate(col_titles):
+        axes[0, j].set_title(title, pad=8)
 
-    figs['sed'] = plot_sed(results, bands, save=save)
+    # pick band colormaps
+    band_cmaps = {'B': 'Blues', 'V': 'Greens', 'K': 'Reds'}
+
+    for i, (N, res) in enumerate(results_list):
+        # pc extents (box is always ~1 pc per your setup)
+        g_any = res[bands[0]].grid
+        xpc = np.array([g_any.lower_bounds[0], g_any.upper_bounds[0]]) / 3.085677581e18
+        ypc = np.array([g_any.lower_bounds[1], g_any.upper_bounds[1]]) / 3.085677581e18
+        extent_pc = [xpc[0], xpc[1], ypc[0], ypc[1]]
+
+        # per-band panels
+        rgb_maps = {}
+        for j, b in enumerate(bands):
+            ax = axes[i, j]
+            ax.set_facecolor('black')
+            proj = np.sum(res[b].grid.L_absorbed, axis=2)
+            vmax = float(np.max(proj))
+            if vmax <= 0:
+                ax.imshow(np.zeros((10,10)), origin='lower', extent=extent_pc,
+                          cmap=band_cmaps.get(b, 'gray'), vmin=0, vmax=1, aspect='equal')
+            else:
+                proj_mask = np.ma.masked_less_equal(proj, 0)
+                vmin = float(proj_mask.min())
+                ax.imshow(proj_mask, origin='lower', extent=extent_pc,
+                          cmap=band_cmaps.get(b, 'gray'),
+                          norm=LogNorm(vmin=vmin, vmax=vmax),
+                          aspect='equal')
+            # x/y labels only on outer edges
+            if i == n_rows - 1:
+                ax.set_xlabel('x (pc)')
+            else:
+                ax.set_xticklabels([])
+            if j == 0:
+                ax.set_ylabel('y (pc)')
+            else:
+                ax.set_yticklabels([])
+            rgb_maps[b] = proj
+
+        # RGB composite column
+        ax_rgb = axes[i, n_cols - 1]
+        ax_rgb.set_facecolor('black')
+        Bm = np.sum(res['B'].grid.L_absorbed, axis=2) if 'B' in res else np.zeros_like(rgb_maps[bands[0]])
+        Vm = np.sum(res['V'].grid.L_absorbed, axis=2) if 'V' in res else np.zeros_like(rgb_maps[bands[0]])
+        Km = np.sum(res['K'].grid.L_absorbed, axis=2) if 'K' in res else np.zeros_like(rgb_maps[bands[0]])
+
+        # build rgb (same normalization as single)
+        def _prep(img):
+            img = np.clip(np.asarray(img, float), 0, None)
+            if not np.any(img > 0):
+                return np.zeros_like(img)
+            p99 = np.percentile(img[img > 0], 99)
+            x = img / (p99 + 1e-30)
+            return np.arcsinh(2 * x) / np.arcsinh(2)
+
+        rgb = np.clip(np.dstack([_prep(Km), _prep(Vm), _prep(Bm)]), 0, 1)
+        ax_rgb.imshow(rgb, origin='lower', extent=extent_pc, aspect='equal')
+
+        # axis labels for RGB column
+        if i == n_rows - 1:
+            ax_rgb.set_xlabel('x (pc)')
+        else:
+            ax_rgb.set_xticklabels([])
+        ax_rgb.set_yticklabels([])
+
+        # vertical row label
+        exp = int(np.floor(np.log10(int(N)))) if N > 0 else 0
+        # place near left outside margin, vertically centered on the row
+        bbox = axes[i,0].get_position()
+        ymid = 0.5*(bbox.y0 + bbox.y1)
+        fig.text(0.08, ymid, f"N=1e{exp}", va='center', ha='right',
+                 rotation=90, fontsize=11)
+
+    fig.subplots_adjust(left=0.12, right=0.98, top=0.90, bottom=0.08,
+                        wspace=0.08, hspace=0.10)
+
+    if save:
+        folder = _ensure_dir(outdir)  # overview spans multiple runs
+        fig.savefig(os.path.join(folder, "absorption_rgb_grid.png"),
+                    dpi=200, bbox_inches='tight')
+        plt.close(fig)
+
+    return fig, axes
+
+def plot_convergence(results_list, bands = ('B','V','K'), save = True, outdir = "outputs/figures/final_plots"):
+    """
+    Plots convergence curve: 
+        f_esc(N) for each band + a reference C * N^-1/2 through the last-N point.
+    """
+
+    Ns = np.array([int(N) for (N, _) in results_list], dtype=float)
+    order = np.argsort(Ns)
+    Ns = Ns[order]
+
+    fig, ax = plt.subplots(figsize=(7,5))
 
     for b in bands:
-        figs[f'{b}_absorption'] = plot_absorption_map(results[b].grid, b, save=save)
+        f = np.array([results_list[i][1][b].escape_fraction if b in results_list[i][1] else np.nan
+                      for i in order], dtype=float)
+        ax.loglog(Ns, f, marker='o', lw=1.5, label=f'{b} band')
 
-    return figs
+        if np.isfinite(f[-1]):
+            C = f[-1] * Ns[-1]**0.5
+            ax.loglog(Ns, C * Ns**(-0.5), ls='--', alpha=0.6)
 
+    ax.set_xlabel('Packets per band, N')
+    ax.set_ylabel(r'$f_{\rm esc}$')
+    ax.set_title('Convergence of escape fraction')
+    ax.grid(True, which='both', ls=':', alpha=0.35)
+    ax.legend()
 
+    if save:
+        folder = _ensure_dir(outdir)
+        fig.savefig(os.path.join(folder, "convergence_fesc.png"), dpi=200, bbox_inches='tight')
+        plt.close(fig)
 
+    return fig, ax
 
-''' Starter code
-import numpy as np
-from matplotlib import pyplot as plt
-from matplotlib.colors import LogNorm
-
-def plot_opacity_validation(draine_data, band_opacities):
+def plot_time_test(n_packets, times, save=True, outdir="outputs/figures/final_plots", filename="time_test.png"):
     """
-    Plot opacity curve with band averages.
-    """
-    pass
+    Plot performance scaling of MCRT runs.
 
-def plot_convergence_analysis(n_packets_array, f_escape_array):
-    """
-    Plot escape fraction vs number of packets.
-    Include 1/sqrt(N) reference line.
-    """
-    pass
+    Parameters
+    ----------
+    n_packets : array-like
+        Packet counts for each test (e.g., [1e3, 1e4, 1e5, 1e6]).
+    times : array-like
+        Total runtime in seconds for each run.
+    save : bool
+        If True, saves plot to `outdir/filename`.
+    outdir : str
+        Output directory for figures.
+    filename : str
+        Output filename.
 
-def plot_sed(wavelength, L_input_by_band, L_output_by_band):
+    Produces two plots:
+    - Linear scale: N vs runtime
+    - Log–log inset or overlay with slope guide
     """
-    Plot input vs output SED.
-    """
-    pass
 
-def create_rgb_composite(B_map, V_map, K_map):
-    """
-    Create RGB image from three bands.
-    """
-    pass
+    n_packets = np.asarray(n_packets, dtype=float)
+    times = np.asarray(times, dtype=float)
 
-'''
+    if np.max(times) < 1e-2:
+        times_plot = times * 1e3
+        time_label = "Runtime (ms)"
+    elif np.max(times) < 60:
+        times_plot = times
+        time_label = "Runtime (s)"
+    else:
+        times_plot = times / 60
+        time_label = "Runtime (min)"
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.loglog(n_packets, times_plot, 'o-', lw=1.8, markersize=6)
+    ax.set_xlabel("Packets per band (N)")
+    ax.set_ylabel(time_label)
+    ax.set_title("MCRT Timing Analysis")
+    ax.grid(True, which='both', ls=':', alpha=0.4)
+
+    if save:
+        os.makedirs(outdir, exist_ok=True)
+        path = os.path.join(outdir, filename)
+        fig.savefig(path, dpi=200, bbox_inches='tight')
+        plt.close(fig)
+
+    return fig, ax
+
+def summarize_tests(test_results):
+    """
+    Nicely print pass/fail summary from run_tests() results dict.
+
+    Expected structure:
+    {
+        'Empty Box': True/False or (True/False, extra_info),
+        'Opaque Box': ...,
+        'Uniform Sphere': (bool, residual),
+        'Energy Conservation': (bool, error)
+    }
+    """
+    all_passed = True
+
+    for name, result in test_results.items():
+        # Handle cases where result is a tuple (pass_flag, value)
+        if isinstance(result, tuple):
+            passed = bool(result[0])
+            extra = result[1] if len(result) > 1 else None
+        else:
+            passed = bool(result)
+            extra = None
+
+        if not passed:
+            print(f"❌ {name}: FAILED", end="")
+            if extra is not None:
+                print(f" (value: {extra:.3g})", end="")
+            print()
+            all_passed = False
+
+    if all_passed:
+        print("🎉 All validation tests passed!")
+    else:
+        print("⚠️ Some validation tests failed — check above details.")
+
+    return all_passed
+

@@ -142,6 +142,7 @@ def run_band_parallel(stars, grid, band, n_packets):
 
     results = EscapeTracker()
     results.L_input = L_total
+    if L_total > 0: results.kappa_bar = np.sum(star_L_band * star_kappa_band) / L_total
     results.record_escapes(outcomes, L_packet)
     results.record_absorbs(grid, outcomes, x, y, z, L_packet)
     
@@ -189,26 +190,3 @@ def run_mcrt_jit(stars, grid, bands, n_packets):
         results['L_input_total'] += results[band].L_input
 
     return results
-
-def main():
-    """
-    Testing
-    """
-    
-    grid = Grid(128)
-    bands = ['B', 'V', 'K']
-    masses = [10, 20, 30, 50]
-    stars = [Star(mass, position=grid.sample_positions(1)) for mass in masses]
-    n_packets = 10000
-
-    results_jit = run_mcrt_jit(stars, grid, bands, n_packets)
-    
-    print('----- Jit Speedup -----')
-    print('B escape fraction:', results_jit['B'].escape_fraction)
-    print('V escape fraction:', results_jit['V'].escape_fraction)
-    print('K escape fraction:', results_jit['K'].escape_fraction)
-    
-    pass
-
-if __name__ == "__main__":
-    main()
