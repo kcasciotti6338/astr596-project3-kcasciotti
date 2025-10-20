@@ -133,6 +133,7 @@ def save_results(results_list, bands, stars, grid):
     
     plot.plot_absorption_rgb_grid(results_list, bands=('B','V','K'), save=True)
     plot.plot_convergence(results_list, bands=('B','V','K'), save=True)
+    plot.plot_convergence_error(results_list, bands=('B','V','K'), save=True)
     build_results_table(results_list[-1][1], bands=('B','V','K'))
     
     test_results_list.append(test.test_convergence_scaling(results_list))

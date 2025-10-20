@@ -7,6 +7,7 @@ import numpy as np
 from dataclasses import dataclass
 from src.grid import Grid
 from copy import deepcopy
+from src.constants import LSUN
 
 @dataclass
 class EscapeTracker:
@@ -76,8 +77,8 @@ def build_results_table(results, bands = ('B','V','K'), out_csv = "outputs/resul
         
         rows.append({'Quantity': f'{band}-band',
                      'Band-averaged opacity': results[band].kappa_bar,
-                     'Input luminosity': results[band].L_input,
-                     'Escaped luminosity': results[band].L_escaped,
+                     'Input luminosity': results[band].L_input / LSUN,
+                     'Escaped luminosity': results[band].L_escaped / LSUN,
                      'Escape fraction': results[band].escape_fraction,
                      'Mean optical depth': tau })
 

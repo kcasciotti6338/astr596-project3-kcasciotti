@@ -50,7 +50,7 @@ def plot_opacity_with_band_means(draine_data, band_opacities, BANDS, save = True
 
     if save:
         folder = _ensure_dir(os.path.join(outdir, run_dir) if run_dir else outdir)
-        fig.savefig(os.path.join(folder, "opacity_with_band_means.png"), dpi=200, bbox_inches='tight')
+        fig.savefig(os.path.join(folder, "opacity_validation.png"), dpi=200, bbox_inches='tight')
         plt.close(fig)
 
     return fig, ax
@@ -92,14 +92,14 @@ def plot_band_sed_lambdaL(results, BANDS, bands = ('B','V','K'), save = True,
         ax.text(x, np.interp(x, lam_um, L_esc_n), f" {b}", va='bottom')
 
     ax.set_xlabel('Wavelength (\u00b5m)')
-    ax.set_ylabel(r'Normalized $\lambda L_\lambda$ (proxy)')
+    ax.set_ylabel(r'Normalized $\lambda L_\lambda$')
     ax.set_title('Band SED: intrinsic vs escaped (normalized)')
     ax.grid(True, which='both', ls=':', alpha=0.35)
     ax.legend()
 
     if save:
         folder = _ensure_dir(os.path.join(outdir, run_dir) if run_dir else outdir)
-        fig.savefig(os.path.join(folder, "band_sed_lambdaL.png"), dpi=200, bbox_inches='tight')
+        fig.savefig(os.path.join(folder, "sed_comparison.png"), dpi=200, bbox_inches='tight')
         plt.close(fig)
 
     return fig, ax
@@ -314,7 +314,7 @@ def plot_convergence(results_list, bands = ('B','V','K'), save = True, outdir = 
 
     if save:
         folder = _ensure_dir(outdir)
-        fig.savefig(os.path.join(folder, "convergence_fesc.png"), dpi=200, bbox_inches='tight')
+        fig.savefig(os.path.join(folder, "convergence_analysis.png"), dpi=200, bbox_inches='tight')
         plt.close(fig)
 
     return fig, ax
@@ -384,7 +384,6 @@ def summarize_tests(test_results):
     all_passed = True
 
     for name, result in test_results.items():
-        # Handle cases where result is a tuple (pass_flag, value)
         if isinstance(result, tuple):
             passed = bool(result[0])
             extra = result[1] if len(result) > 1 else None
@@ -406,3 +405,74 @@ def summarize_tests(test_results):
 
     return all_passed
 
+def plot_convergence_error(results_list, bands=('B','V','K'), save=True, outdir="outputs/figures/final_plots",
+                           filename="convergence_error.png"):
+    """
+    Plot |f_esc(N) - f_ref| vs N for each band on log-log axes.
+    f_ref = median(f_esc) of the top-K largest N runs.
+    Includes labeled N^{-1/2} reference lines.
+
+    results_list : list of (N_packets, results_dict)
+    """
+
+    Ns_all = np.array([float(N) for (N, _) in results_list], dtype=float)
+    order = np.argsort(Ns_all)
+    Ns_all = Ns_all[order]
+    R_sorted = [results_list[i][1] for i in order]
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+
+    for b in bands:
+        Ns_b, f_b = [], []
+        for N_val, res in zip(Ns_all, R_sorted):
+            if isinstance(res, dict) and (b in res):
+                fesc = getattr(res[b], 'escape_fraction', np.nan)
+                if np.isfinite(fesc):
+                    Ns_b.append(float(N_val))
+                    f_b.append(float(fesc))
+        if len(Ns_b) == 0:
+            continue
+
+        Ns_b = np.array(Ns_b, dtype=float)
+        f_b  = np.array(f_b, dtype=float)
+        order_b = np.argsort(Ns_b)
+        Ns_b, f_b = Ns_b[order_b], f_b[order_b]
+
+        K = min(2, len(f_b))
+        f_ref = np.median(f_b[-K:])
+
+        err = np.abs(f_b - f_ref)
+        err_plot = np.where(err > 0, err, 1e-16)  
+
+        ax.loglog(Ns_b, err_plot, 'o-', lw=1.6, label=f'{b} band')
+
+        nz = np.flatnonzero(err > 0)
+        if nz.size > 0:
+            j = nz[-1]
+            N_anchor, E_anchor = Ns_b[j], err[j]
+        else:
+            N_anchor, E_anchor = Ns_b[-1], max(np.nanmedian(err), 1e-12)
+
+        Ng = np.geomspace(Ns_b[0], Ns_b[-1], 100)
+        guide = E_anchor * (Ng / N_anchor) ** (-0.5)
+        ax.loglog(Ng, guide, '--', alpha=0.6)
+        ax.text(Ng[len(Ng)//4], guide[len(Ng)//4]*1.2,
+                r'$N^{-1/2}$', fontsize=9, alpha=0.7)
+
+        print(f"[{b}] N range {Ns_b[0]:.0e}–{Ns_b[-1]:.0e}, "
+              f"f_ref={f_ref:.6f}, err_min={np.min(err):.3e}, err_max={np.max(err):.3e}")
+
+    ax.set_xlabel('Packets per band (N)')
+    ax.set_ylabel(r'$|\,f_{\rm esc}(N) - f_{\rm ref}\,|$')
+    ax.set_title('Convergence of Escape Fraction (Error vs N)')
+    ax.grid(True, which='both', ls=':', alpha=0.35)
+    ax.legend()
+    ax.set_xlim(np.min(Ns_all)*0.9, np.max(Ns_all)*1.1)
+
+    if save:
+        os.makedirs(outdir, exist_ok=True)
+        path = os.path.join(outdir, filename)
+        fig.savefig(path, dpi=200, bbox_inches='tight')
+        plt.close(fig)
+
+    return fig, ax
